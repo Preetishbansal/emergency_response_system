@@ -1,0 +1,8 @@
+# Python and generated files
+__pycache__/
+*.pyc
+
+# Large data files - don't push these to GitHub
+data/raw/*.csv
+data/processed/*.csv
+data/*.db
