@@ -20,6 +20,13 @@ from pyspark.sql.types import (
     StringType, DoubleType
 )
 
+import os
+# Fix for PySpark on Windows: use the local winutils binaries we just downloaded
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+hadoop_dir = os.path.join(project_root, 'hadoop')
+os.environ['HADOOP_HOME'] = hadoop_dir
+os.environ['PATH'] = os.path.join(hadoop_dir, 'bin') + os.pathsep + os.environ.get('PATH', '')
+
 # ── Spark Session with Kafka connector ────────────────────────────────────────
 spark = (
     SparkSession.builder
@@ -28,7 +35,7 @@ spark = (
     # Downloads the Kafka connector JAR automatically (first run takes ~1 min)
     .config(
         "spark.jars.packages",
-        "org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.0"
+        "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1"
     )
     .config("spark.sql.shuffle.partitions", "2")      # keep it lightweight locally
     .config("spark.ui.showConsoleProgress", "false")
@@ -93,7 +100,7 @@ zone_counts = (
     )
     .agg(
         F.count("incident_id").alias("incident_count"),
-        F.countDistinct("severity").alias("severity_variety")
+        F.approx_count_distinct("severity").alias("severity_variety")
     )
     .select(
         F.col("window.start").alias("window_start"),
@@ -152,7 +159,7 @@ query_anomalies = (
     .start()
 )
 
-# ── QUERY 3: Live severity breakdown across all zones ─────────────────────────
+# ── QUERY 3: Live severity breakdown across all zones 
 print("[Q3] Starting severity breakdown stream…\n")
 
 severity_breakdown = (
@@ -172,7 +179,6 @@ severity_breakdown = (
         F.col("count"),
         F.round(F.col("avg_response_secs") / 60, 2).alias("avg_response_mins")
     )
-    .orderBy("severity")
 )
 
 query_severity = (
