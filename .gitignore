@@ -5,3 +5,6 @@ __pycache__/
 logs/
 airflow_env/
 pipeline/data/
+data/
+*.parquet
+*.db
