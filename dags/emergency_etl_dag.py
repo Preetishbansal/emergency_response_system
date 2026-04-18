@@ -24,6 +24,18 @@ with DAG(
         df.to_parquet('/data/processed/raw_extract.parquet')
         print(f"Extracted {len(df)} rows")
 
+    def validate_task():
+        """Task 29 — Automated Data Quality Checks"""
+        import pandas as pd
+        from data_quality import run_quality_checks
+        
+        df = pd.read_parquet('/data/processed/raw_extract.parquet')
+        is_valid = run_quality_checks(df, name="Nightly ETL Ingest")
+        
+        if not is_valid:
+            raise ValueError("Data quality checks failed! Stopping pipeline.")
+        print("Data quality checks passed.")
+
     def transform_task():
         df = pd.read_parquet('/data/processed/raw_extract.parquet')
         df.dropna(inplace=True)
@@ -38,8 +50,49 @@ with DAG(
         conn.close()
         print("Loaded to database!")
 
-    t1 = PythonOperator(task_id='extract', python_callable=extract_task)
-    t2 = PythonOperator(task_id='transform', python_callable=transform_task)
-    t3 = PythonOperator(task_id='load', python_callable=load_task)
+    def save_to_lakehouse():
+        """Task 28 — Write transformed data to Delta Lakehouse for ACID
+        transactions, schema enforcement, and time-travel queries."""
+        from pyspark.sql import SparkSession
+        from delta import configure_spark_with_delta_pip
+        from delta.tables import DeltaTable
 
-    t1 >> t2 >> t3   # t1 runs first, then t2, then t3
+        DELTA_PATH    = '/data/delta/incidents'
+        PARQUET_INPUT = '/data/processed/transformed.parquet'
+
+        builder = (
+            SparkSession.builder
+            .appName("DeltaLakehouse_ETL")
+            .master("local[*]")
+            .config("spark.sql.extensions",
+                    "io.delta.sql.DeltaSparkSessionExtension")
+            .config("spark.sql.catalog.spark_catalog",
+                    "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        )
+        spark = configure_spark_with_delta_pip(builder).getOrCreate()
+        spark.sparkContext.setLogLevel("WARN")
+
+        # Read the transformed Parquet produced by transform_task
+        df = spark.read.parquet(PARQUET_INPUT)
+        row_count = df.count()
+        print(f"[Lakehouse] Writing {row_count} rows to Delta table …")
+
+        # Append or overwrite — "append" keeps history, enabling time-travel
+        df.write.format("delta").mode("append").save(DELTA_PATH)
+        print(f"[Lakehouse] ✅ Delta table updated at: {DELTA_PATH}")
+
+        # Log the latest version from the Delta history
+        delta_table = DeltaTable.forPath(spark, DELTA_PATH)
+        history = delta_table.history(1).collect()
+        print(f"[Lakehouse] Latest version: {history[0]['version']}  "
+              f"operation: {history[0]['operation']}")
+
+        spark.stop()
+
+    t1 = PythonOperator(task_id='extract',           python_callable=extract_task)
+    t_val = PythonOperator(task_id='validate',        python_callable=validate_task)
+    t2 = PythonOperator(task_id='transform',         python_callable=transform_task)
+    t3 = PythonOperator(task_id='load',              python_callable=load_task)
+    t4 = PythonOperator(task_id='save_to_lakehouse', python_callable=save_to_lakehouse)
+
+    t1 >> t_val >> t2 >> t3 >> t4   # chain: extract → validate → transform → load → lakehouse
