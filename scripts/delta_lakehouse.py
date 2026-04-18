@@ -15,10 +15,12 @@ import sys
 
 # ── Windows: set HADOOP_HOME so Spark can find winutils.exe ─────────
 # winutils.exe and hadoop.dll must exist in %HADOOP_HOME%\bin on Windows.
-# Download from: https://github.com/cdarlint/winutils (use hadoop-3.3.5)
-# and place both files at  C:\hadoop\bin\
+# The 'hadoop' folder is expected in the repository root.
 if sys.platform.startswith("win"):
-    _hadoop_home = r"C:\hadoop"
+    # Dynamically find the hadoop directory in the project root
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _hadoop_home = os.path.abspath(os.path.join(_script_dir, "..", "hadoop"))
+    
     os.environ["HADOOP_HOME"] = _hadoop_home
     os.environ["hadoop.home.dir"] = _hadoop_home
     # Prepend hadoop bin to PATH so JVM subprocess finds hadoop.dll

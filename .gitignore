@@ -8,3 +8,12 @@ pipeline/data/
 data/
 *.parquet
 *.db
+
+# Local binaries and environment
+hadoop/
+*.exe
+*.dll
+*.log
+.env
+spark-warehouse/
+.ipynb_checkpoints/
